@@ -97,6 +97,24 @@ uv run --no-project --with fonttools --with debugpy python -m debugpy \
 
 然后在编辑器里用「Attach（端口 5678）」接入。
 
+## 开发
+
+提交前的检查用 [just](https://github.com/casey/just)（`brew install just`）：
+
+```bash
+just            # 列出配方
+just lint       # ruff 语法级/拼写级检查
+just check      # 提交门禁，目前等同 lint；以后加测试会往这里追加
+just lock       # 改完脚本头部 PEP 723 依赖后重新锁定
+just upgrade    # fontTools 升级到允许范围内的最新版
+```
+
+项目刻意不设 pyproject.toml、不建 `.venv`：ruff 通过 `uv tool run` 临时拉取并把版本
+钉死在 [Justfile](./Justfile) 命令里（`ruff@0.16.10`），不污染项目目录；
+lint 规则显式写在 [ruff.toml](./ruff.toml)（`E4/E7/E9/F`），不跟随 ruff
+默认规则集漂移——脚本里刻意统一的 `%` 格式化和扫描坏字体时的宽泛 except
+不属于错误。
+
 ## 输出说明
 
 ```text
@@ -152,6 +170,8 @@ brew install --cask font-sarasa-gothic      # family: Sarasa Mono SC
 font-metrics/
 ├── font-metrics.py       # 脚本本体（头部含 PEP 723 依赖声明）
 ├── font-metrics.py.lock  # uv 锁定的依赖版本
+├── ruff.toml             # ruff lint 规则
+├── Justfile              # just 任务入口（lint / lock / upgrade / check）
 ├── scripts/
 │   └── debug-python.sh   # 调试用解释器包装（供 launch.json 使用）
 ├── .vscode/launch.json   # F5 调试配置

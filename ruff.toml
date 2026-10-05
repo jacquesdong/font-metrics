@@ -1,0 +1,14 @@
+# 本项目是 PEP 723 单文件脚本，没有 pyproject.toml，ruff 配置独立放这里。
+# target-version 与脚本头部 requires-python = ">=3.8" 对齐。
+target-version = "py38"
+
+[lint]
+# https://docs.astral.sh/ruff/rules/
+#
+# ruff 的默认规则集自 v0.1.0 起冻结了很久（59 条），但 v0.16.0（2026-07-23）
+# 一次性扩到 413 条，新增一堆观点性检查，又丢掉一些语法检查。
+# https://astral.sh/blog/ruff-v0.16.0
+# 新版默认集含 UP/BLE/S 等（可使用 `just lint --isolated --statistics` 查看），
+# 会把刻意统一的 % 格式化（UP031）和扫描坏字体时刻意吞掉的宽泛 except
+# （BLE001/S112）报成问题。当前只守语法级 + 拼写级错误；想加规则就往这里加。
+select = ["E4", "E7", "E9", "F"]

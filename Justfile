@@ -1,0 +1,26 @@
+# 本仓库的任务入口。产品形态是 PEP 723 单文件脚本（无 pyproject.toml、
+# 无 .venv），所以开发工具不装进项目环境，而用 uv tool run 临时拉取并钉住版本。
+#   just            列出配方
+#   just check      提交前的门禁（目前等同 lint）
+#   just lint       ruff 语法级/拼写级检查（规则见 ruff.toml）
+#   just lock       修改依赖后重新锁定（先编辑脚本头部 PEP 723 块）
+#   just upgrade    把 fontTools 升级到允许范围内的最新版
+
+# 列出配方（just 不带参数时跑的就是它）
+default:
+	@just --list
+
+# 规则集显式写在 ruff.toml，不跟 ruff 默认规则漂移；版本钉在命令里
+lint *args:
+	uv tool run ruff@0.16.10 check {{args}} font-metrics.py
+
+# 修改依赖：先编辑 font-metrics.py 头部的 dependencies，再跑这个
+lock:
+	uv lock --script font-metrics.py
+
+# 升级 fontTools 到允许范围内的最新版
+upgrade:
+	uv lock --script font-metrics.py --upgrade-package fonttools
+
+# 提交前的门禁：依赖写在头部行，以后加测试就往这里追加
+check: lint

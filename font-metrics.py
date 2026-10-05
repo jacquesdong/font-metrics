@@ -206,6 +206,34 @@ CMD_COMPARE = "compare"
 # fmt: on
 
 
+def cmd_list(args):
+    path = resolve_font(args.ttc)
+    if not path.endswith(".ttc"):
+        die("list expects a .ttc collection")
+    list_subfonts(path, args.grep)
+
+
+def cmd_info(args):
+    print_info(load_font(args.font, args.index), args.size)
+
+
+def cmd_compare(args):
+    infos = [load_font(spec, 0) for spec in args.fonts]
+    print_info(infos[0], args.size)
+    print()
+    print_info(infos[1], args.size)
+    print()
+    compare(infos[0], infos[1], args.size)
+
+
+# 子命令注册表：新增子命令时除了在 build_parser 加 parser，还要在这里登记处理函数
+COMMANDS = {
+    CMD_LIST: cmd_list,
+    CMD_INFO: cmd_info,
+    CMD_COMPARE: cmd_compare,
+}
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Inspect monospace font metrics.")
     parser.add_argument("--debug", action="store_true", help="print tracebacks if failed while scanning")
@@ -250,23 +278,11 @@ def main():
 
     setup_logging(args)
 
-    if args.command == CMD_LIST:
-        path = resolve_font(args.ttc)
-        if not path.endswith(".ttc"):
-            die("list expects a .ttc collection")
-        list_subfonts(path, args.grep)
-    elif args.command == CMD_INFO:
-        print_info(load_font(args.font, args.index), args.size)
-    elif args.command == CMD_COMPARE:
-        infos = [load_font(spec, 0) for spec in args.fonts]
-        print_info(infos[0], args.size)
-        print()
-        print_info(infos[1], args.size)
-        print()
-        compare(infos[0], infos[1], args.size)
-    else:
-        # 走到这里说明新增了子命令却漏了分派
+    handler = COMMANDS.get(args.command)
+    if handler is None:
+        # 走到这里说明新增了子命令却漏了在 COMMANDS 登记
         raise RuntimeError("unhandled command: %r" % args.command)
+    handler(args)
 
 
 if __name__ == "__main__":

@@ -72,6 +72,31 @@ uv run ./font-metrics.py --list Sarasa-SuperTTC.ttc --grep 'Mono SC$'
 `.ttc` 合集用 `文件:序号` 指定子字体（如 `Sarasa-SuperTTC.ttc:205`）；也可以用
 `--index 序号`（注意放在位置参数**之前**）。
 
+## 调试（Trae / VS Code）
+
+本项目是 PEP 723 单文件脚本，没有 `.venv`，而 `uv run --script` 又不允许
+debugpy 替换启动命令，因此调试通过一个解释器包装脚本解决，配置已在
+`.vscode/launch.json` 中：
+
+- 按 **F5**（或运行面板选「Python Debugger: uv run font-metrics.py」）即可断点
+  调试，参数通过弹窗输入（`pickArgs`）。
+- `"python"` 指向 [scripts/debug-python.sh](./scripts/debug-python.sh)：它先
+  `uv export --script` 从 `font-metrics.py.lock` 导出**锁版本**依赖清单，再用
+  `uv run --with-requirements ... --with debugpy python` 启动，所以调试环境与
+  平时 `uv run` 完全一致，仅额外注入 debugpy。
+- 首次启动会构建一次缓存环境（几秒），之后秒起。
+- 前提：编辑器已安装 Python（debugpy）扩展；`scripts/debug-python.sh` 需保留
+  可执行权限（`chmod +x`，仓库内已设置）。
+
+不想用包装脚本时，也可手动启动 debugpy 监听端口，再让编辑器 Attach：
+
+```bash
+uv run --no-project --with fonttools --with debugpy python -m debugpy \
+  --listen 5678 --wait-for-client font-metrics.py --size 12 Menlo.ttc
+```
+
+然后在编辑器里用「Attach（端口 5678）」接入。
+
 ## 输出说明
 
 ```text
@@ -127,6 +152,9 @@ brew install --cask font-sarasa-gothic      # family: Sarasa Mono SC
 font-metrics/
 ├── font-metrics.py       # 脚本本体（头部含 PEP 723 依赖声明）
 ├── font-metrics.py.lock  # uv 锁定的依赖版本
+├── scripts/
+│   └── debug-python.sh   # 调试用解释器包装（供 launch.json 使用）
+├── .vscode/launch.json   # F5 调试配置
 ├── .gitignore
 ├── README.md             # 本文件
 └── NOTES.md              # 字体文件格式与解析笔记

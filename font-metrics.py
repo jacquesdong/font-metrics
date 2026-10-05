@@ -103,12 +103,12 @@ def resolve_font(spec):
     die("cannot find font: %s" % spec)
 
 
-def load_font(spec, default_index):
+def load_font(spec):
     """Resolve a font spec (with optional ':index' suffix) and measure it."""
     _, explicit = split_index(spec)
     r = resolve_font(spec)
     path, found_idx = r if isinstance(r, tuple) else (r, None)
-    index = explicit if explicit is not None else (found_idx or default_index)
+    index = explicit if explicit is not None else (found_idx or 0)
     return measure(path, index)
 
 
@@ -235,11 +235,11 @@ def cmd_list(args):
 
 
 def cmd_info(args):
-    print_info(load_font(args.font, args.index), args.size)
+    print_info(load_font(args.font), args.size)
 
 
 def cmd_compare(args):
-    infos = [load_font(spec, 0) for spec in args.fonts]
+    infos = [load_font(spec) for spec in args.fonts]
     print_info(infos[0], args.size)
     print()
     print_info(infos[1], args.size)
@@ -266,7 +266,6 @@ def build_parser():
 
     parser_info = command_parser.add_parser(CMD_INFO, help="show metrics of one font")
     parser_info.add_argument("font", metavar="FONT", help="font path, file name or family name")
-    parser_info.add_argument("--index", type=int, default=0, help="subfont index for .ttc (default 0)")
     parser_info.add_argument("--size", type=float, default=0, help="font size in px for pixel columns")
 
     parser_compare = command_parser.add_parser(CMD_COMPARE, help="compare two fonts at a font size")

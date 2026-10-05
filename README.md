@@ -72,8 +72,10 @@ uv run ./font-metrics.py list Sarasa-SuperTTC.ttc --grep 'Mono SC$'
   `/usr/local/share/fonts`、`/usr/share/fonts` 中查找
 - **family 名**：如 `'Maple Mono CN'`、`'Sarasa Mono SC'`，自动扫描上述目录解析
 
-`.ttc` 合集用 `文件:序号` 指定子字体（如 `Sarasa-SuperTTC.ttc:205`）；`info`
-也可以用 `--index 序号`（放在子命令之后、字体参数之前）。
+`.ttc` 合集里的子字体统一用 `文件:序号` 后缀指定（如 `Sarasa-SuperTTC.ttc:205`），
+info 和 compare 通用；序号先用 `list` 子命令查。compare 对比两个不同子字体时
+后缀各自跟随自己的文件（如 `X.ttc:205 X.ttc:445`），这也是不设 `--index`
+选项的原因——单个选项无法分别作用于两个字体参数。
 
 按 family 名查找时，工具会扫描所有字体目录并静默跳过无法解析的文件；若报
 `cannot find font` 但你认为字体已在目录里，加 `--debug` 可看到每个被跳过文件的

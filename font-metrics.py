@@ -82,29 +82,41 @@ def split_index(spec):
 
 
 def resolve_font(spec):
-    """Turn a path / file name / family name into (path, index_hint)."""
-    spec, _ = split_index(spec)
-    if os.path.isfile(spec):
-        return spec
-    if os.path.splitext(spec)[1]:
+    """Turn a path / file name / family name into path, or (path, index).
+
+    family 名命中时返回首个命中的 (path, index)。若 spec 带显式 ':index'
+    且该序号子字体的 family 名与所请求的不符（典型：合集里相邻位置是另一个
+    family），抛 FontError，而不是静默返回错字体的度量。
+    """
+    spec_name, spec_index = split_index(spec)
+    if os.path.isfile(spec_name):
+        return spec_name
+    if os.path.splitext(spec_name)[1]:
         for d in FONT_DIRS:
-            p = os.path.join(d, spec)
+            p = os.path.join(d, spec_name)
             if os.path.isfile(p):
                 return p
+
+    try:
+        from fontTools.ttLib import TTFont, TTLibError
+    except ImportError:
+        die("fontTools is required: run with 'uv run ./font-metrics.py' or 'pip install fonttools'")
+
+    # (path, index_or_None, subfamily)：spec_name 是用户请求的 family 名，
+    # family 是每个子字体 name 表里实际读到的 family 名
+    matches = []
     seen = set()
     for d in FONT_DIRS:
         if not os.path.isdir(d):
             continue
-        for name in os.listdir(d):
-            path = os.path.join(d, name)
+        for entry in os.listdir(d):
+            path = os.path.join(d, entry)
             if not os.path.isfile(path) or path in seen:
                 continue
+
             seen.add(path)
-            try:
-                from fontTools.ttLib import TTFont
-            except ImportError:
-                die("fontTools is required: run with 'uv run ./font-metrics.py' or 'pip install fonttools'")
-            if name.endswith(".ttc"):
+
+            if entry.endswith(".ttc"):
                 try:
                     n = TTFont(path, fontNumber=0, lazy=True).reader.numFonts
                 except Exception:
@@ -112,30 +124,53 @@ def resolve_font(spec):
                     continue
                 for i in range(n):
                     try:
-                        f = TTFont(path, fontNumber=i, lazy=True)
-                        fam = f["name"].getDebugName(1)
+                        name_table = TTFont(path, fontNumber=i, lazy=True)["name"]
+                        family, subfamily = name_table.getDebugName(1), name_table.getDebugName(2)
                     except Exception:
                         logger.debug("skip %s #%d: cannot read name", path, i, exc_info=True)
-                        fam = None
-                    if fam == spec:
-                        return path, i
+                        family = subfamily = None
+                    if family == spec_name:
+                        matches.append((path, i, subfamily))
             else:
                 try:
-                    fam = TTFont(path, lazy=True)["name"].getDebugName(1)
+                    name_table = TTFont(path, lazy=True)["name"]
+                    family, subfamily = name_table.getDebugName(1), name_table.getDebugName(2)
                 except Exception:
                     logger.debug("skip %s: cannot read name", path, exc_info=True)
-                    fam = None
-                if fam == spec:
-                    return path
-    die("cannot find font: %s" % spec)
+                    family = subfamily = None
+                if family == spec_name:
+                    matches.append((path, None, subfamily))
+
+    if not matches:
+        die("cannot find font: %s" % spec_name)
+    path = matches[0][0]
+
+    if spec_index is not None:
+        # 核对显式序号确实属于所请求的 family；越界/损坏留给 measure 报错
+        try:
+            actual_family = TTFont(path, fontNumber=spec_index, lazy=True)["name"].getDebugName(1)
+        except TTLibError:
+            return path, spec_index
+        if actual_family != spec_name:
+            valid = ", ".join(
+                "#%d (%s)" % (index, subfamily or "?") for p, index, subfamily in matches if p == path and index is not None
+            )
+            raise FontError(
+                "subfont #%d in %s is %r, not %r (%r found at %s)"
+                % (spec_index, path, actual_family, spec_name, spec_name, valid or "none")
+            )
+        return path, spec_index
+
+    _, found_index, _ = matches[0]
+    return path if found_index is None else (path, found_index)
 
 
 def load_font(spec):
     """Resolve a font spec (with optional ':index' suffix) and measure it."""
     _, explicit = split_index(spec)
     r = resolve_font(spec)
-    path, found_idx = r if isinstance(r, tuple) else (r, None)
-    index = explicit if explicit is not None else (found_idx or 0)
+    path, found_index = r if isinstance(r, tuple) else (r, None)
+    index = explicit if explicit is not None else (found_index or 0)
     return measure(path, index)
 
 

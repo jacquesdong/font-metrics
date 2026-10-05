@@ -208,11 +208,15 @@ def main():
     except ImportError:
         die("fontTools is required: run with 'uv run ./font-metrics.py' or 'pip install fonttools'")
 
-    logging.basicConfig(level=logging.DEBUG if args.debug else logging.WARNING,
-                        format="%(message)s")
-    # 我们只关心自家 font-metrics logger 的调试输出，fontTools 会把每个字体的
-    # 表解析细节打成 DEBUG/INFO，压回 WARNING 以免 --debug 被内部噪音淹没。
-    logging.getLogger("fontTools").setLevel(logging.WARNING)
+    # 只控制自家 font-metrics logger，root 保持 WARNING。handler 放行 DEBUG，
+    # 由各 logger 的级别决定是否输出：--debug 时仅我们的 logger 降到 DEBUG，
+    # 第三方库（如 fontTools）维持 WARNING，不会被顺带打开。
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.setLevel(logging.DEBUG)
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.WARNING)
+    logger.setLevel(logging.DEBUG if args.debug else logging.WARNING)
 
     if args.list:
         path = resolve_font(args.list)

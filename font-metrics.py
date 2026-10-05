@@ -148,6 +148,13 @@ def measure(path, index):
         except TTLibError:
             raise ValueError("cannot open font %s: %s" % (path, e))
         raise ValueError("subfont #%d not found in %s (valid 0..%d)" % (index, path, n - 1))
+
+    # 非合集字体只有一个子字体，fontTools 对其传 fontNumber 会静默忽略；
+    # 合集 reader 带 numFonts，单体 SFNTReader 没有，据此拦下越界序号，
+    # 避免单体字体被错误标注成 [#N]（:0 对单体合法，不拦）
+    if index and getattr(f.reader, "numFonts", None) is None:
+        raise ValueError("subfont #%d not found in %s (not a font collection, only #0 is valid)" % (index, path))
+
     upm = f["head"].unitsPerEm
     cmap = f.getBestCmap()
     hmtx = f["hmtx"]

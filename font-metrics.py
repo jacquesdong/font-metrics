@@ -124,7 +124,8 @@ def resolve_font(spec):
     family 名命中多个面孔时由 choose_face 选 Regular，选不出就报错。
     若 spec 带显式 ':index' 但该序号子字体的 family 名与所请求的不符
     （典型：合集里相邻位置是另一个 family），抛 FontError 而不是静默
-    返回错字体的度量。
+    返回错字体的度量。命中横跨多个文件时（各合集序号各自独立），按序号
+    对号入座到真正包含该 family 的文件，而不是死守第一个命中文件。
     """
     spec_name, spec_index = split_index(spec)
     if os.path.isfile(spec_name):
@@ -183,21 +184,42 @@ def resolve_font(spec):
         die("cannot find font: %s" % spec_name)
 
     if spec_index is not None:
-        # 核对显式序号确实属于所请求的 family；越界/损坏留给 measure 报错
-        path = matches[0][0]
-        try:
-            actual_family = TTFont(path, fontNumber=spec_index, lazy=True)["name"].getDebugName(1)
-        except TTLibError:
-            return path, spec_index
-        if actual_family != spec_name:
-            valid = ", ".join(
-                "#%d (%s)" % (index, subfamily or "?") for p, index, subfamily in matches if p == path and index is not None
-            )
+        # 显式序号：扫描已逐个读过各子字体的 name 表，命中元组 (path, index, ...)
+        # 本身就证明该序号在此文件中属于所请求 family，按序号对号入座即可。
+        # 各合集序号各自独立、matches 可能横跨多个文件，不能死守 matches[0] 所在
+        # 的文件去开 spec_index——那会拿别的文件张冠李戴，甚至把存在的序号误报越界。
+        # 单体字体（index is None）只占 #0 一个位置。
+        for path, found, _subfamily in matches:
+            slot = 0 if found is None else found
+            if slot == spec_index:
+                return path, spec_index
+
+        # #spec_index 不属于任何命中文件里的该 family：列出 family 实际位置。
+        # 只有一个命中文件时补开一次该序号，说明这个位置实际属于谁；越界/损坏
+        # （TTLibError）照旧交给 measure 报合法范围。跨文件时不猜用户指的是哪份。
+        multi_file = len({p for p, _, _ in matches}) > 1
+        first_path = matches[0][0]
+        actual_family = None
+        if not multi_file:
+            try:
+                actual_family = TTFont(first_path, fontNumber=spec_index, lazy=True)["name"].getDebugName(1)
+            except TTLibError:
+                return first_path, spec_index
+
+        def face_loc(path, index, subfamily):
+            sub = subfamily or "?"
+            if index is None:
+                return "%s (%s, only #0)" % (path, sub)
+            if multi_file:
+                return "%s:#%d (%s)" % (path, index, sub)
+            return "#%d (%s)" % (index, sub)
+
+        locs = ", ".join(face_loc(p, i, s) for p, i, s in matches)
+        if actual_family is not None and actual_family != spec_name:
             raise FontError(
-                "subfont #%d in %s is %r, not %r (%r found at %s)"
-                % (spec_index, path, actual_family, spec_name, spec_name, valid or "none")
+                "subfont #%d in %s is %r, not %r; %r found at %s" % (spec_index, first_path, actual_family, spec_name, spec_name, locs)
             )
-        return path, spec_index
+        raise FontError("subfont #%d is not a face of %r; %r found at %s" % (spec_index, spec_name, spec_name, locs))
 
     # 未指定序号：bare family 名按惯例指 Regular，多面孔时提示一行（不静默）
     chosen = choose_face(matches)

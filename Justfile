@@ -1,10 +1,11 @@
 # 本仓库的任务入口。产品形态是 PEP 723 单文件脚本（无 pyproject.toml、
 # 无 .venv），所以开发工具不装进项目环境，而用 uv tool run 临时拉取并钉住版本。
 #   just            列出配方
-#   just check      提交前的门禁（lint + format 检查 + doctest）
+#   just check      提交前的门禁（lint + format 检查 + doctest + 集成回归）
 #   just lint       ruff 语法级/拼写级检查（规则见 ruff.toml）
 #   just format     ruff 自动格式化（行宽 136，配置见 ruff.toml）
 #   just test       运行脚本内 doctest（无需 fontTools）
+#   just itest      运行 tests/ 集成回归（合成 ttc，走 fontTools 锁定环境）
 #   just lock       修改依赖后重新锁定（先编辑脚本头部 PEP 723 块）
 #   just upgrade    把 fontTools 升级到允许范围内的最新版
 #   just run ...    运行脚本（多词 family 名需双层引号，见下）
@@ -15,26 +16,34 @@ default:
 
 # 规则集显式写在 ruff.toml，不跟 ruff 默认规则漂移；版本钉在命令里
 lint *args:
-	uv tool run ruff@0.16.10 check {{args}} font-metrics.py
+	uv tool run ruff@0.16.10 check {{args}} font-metrics.py tests/test_resolve_font.py
 
 # 自动格式化（宽度等配置见 ruff.toml [format]）
 format *args:
-	uv tool run ruff@0.16.10 format {{args}} font-metrics.py
+	uv tool run ruff@0.16.10 format {{args}} font-metrics.py tests/test_resolve_font.py
 
-# 修改依赖：先编辑 font-metrics.py 头部的 dependencies，再跑这个
+# 修改依赖：先编辑 font-metrics.py 头部的 dependencies，再跑这个。
+# 测试脚本声明同样的 fonttools，两份锁一起更新
 lock:
 	uv lock --script font-metrics.py
+	uv lock --script tests/test_resolve_font.py
 
-# 升级 fontTools 到允许范围内的最新版
+# 升级 fontTools 到允许范围内的最新版（主脚本与测试脚本两份锁同步）
 upgrade:
 	uv lock --script font-metrics.py --upgrade-package fonttools
+	uv lock --script tests/test_resolve_font.py --upgrade-package fonttools
 
 # doctest：split_index 等纯函数的文档串示例，系统 python 即可，无需 fontTools
 test:
 	python3 -m doctest font-metrics.py
 
-# 提交前的门禁：lint + 格式检查（format --check 不改文件）+ doctest
-check: lint (format "--check") test
+# 集成回归：resolve_font 跨文件序号归属等需要真实开 ttc 的用例；
+# 测试脚本自带 PEP 723 头与 lock，CI 里用 uv run --frozen 严格按锁执行
+itest:
+	uv run ./tests/test_resolve_font.py
+
+# 提交前的门禁：lint + 格式检查（format --check 不改文件）+ doctest + 集成回归
+check: lint (format "--check") test itest
 
 # 运行 font-metrics.py。多词 family 名需双层引号：just run info "'Maple Mono CN'"
 # （just 的 {{args}} 不会保留引号，直接 just run info 'Maple Mono CN' 会被拆成三个参数）

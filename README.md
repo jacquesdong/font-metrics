@@ -128,8 +128,9 @@ just            # 列出配方
 just lint       # ruff 语法级/拼写级检查
 just format     # ruff 自动格式化
 just test       # 运行脚本内 doctest（系统 python，无需 fontTools）
-just check      # 提交门禁：lint + 格式检查 + doctest
-just lock       # 改完脚本头部 PEP 723 依赖后重新锁定
+just itest      # 运行 tests/ 集成回归（合成 ttc，uv 按锁拉 fontTools）
+just check      # 提交门禁：lint + 格式检查 + doctest + 集成回归
+just lock       # 改完脚本头部 PEP 723 依赖后重新锁定（主脚本与测试两份锁）
 just upgrade    # fontTools 升级到允许范围内的最新版
 ```
 
@@ -195,6 +196,9 @@ brew install --cask font-sarasa-gothic      # family: Sarasa Mono SC
 font-metrics/
 ├── font-metrics.py       # 脚本本体（头部含 PEP 723 依赖声明）
 ├── font-metrics.py.lock  # uv 锁定的依赖版本
+├── tests/
+│   ├── test_resolve_font.py       # 集成回归（自带 PEP 723 头，uv run 执行）
+│   └── test_resolve_font.py.lock  # 测试环境的依赖锁，随仓库提交
 ├── ruff.toml             # ruff lint 规则
 ├── Justfile              # just 任务入口（lint / lock / upgrade / check）
 ├── scripts/

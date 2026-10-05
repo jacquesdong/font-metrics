@@ -5,6 +5,7 @@
 #   just lint       ruff 语法级/拼写级检查（规则见 ruff.toml）
 #   just lock       修改依赖后重新锁定（先编辑脚本头部 PEP 723 块）
 #   just upgrade    把 fontTools 升级到允许范围内的最新版
+#   just run ...    运行脚本（多词 family 名需双层引号，见下）
 
 # 列出配方（just 不带参数时跑的就是它）
 default:
@@ -24,3 +25,8 @@ upgrade:
 
 # 提交前的门禁：依赖写在头部行，以后加测试就往这里追加
 check: lint
+
+# 运行 font-metrics.py。多词 family 名需双层引号：just run "'Maple Mono CN'"
+# （just 的 {{args}} 不会保留引号，直接 just run 'Maple Mono CN' 会被拆成三个参数）
+run *args:
+	uv run ./font-metrics.py {{args}}

@@ -72,6 +72,17 @@ uv run ./font-metrics.py --list Sarasa-SuperTTC.ttc --grep 'Mono SC$'
 `.ttc` 合集用 `文件:序号` 指定子字体（如 `Sarasa-SuperTTC.ttc:205`）；也可以用
 `--index 序号`（注意放在位置参数**之前**）。
 
+按 family 名查找时，工具会扫描所有字体目录并静默跳过无法解析的文件；若报
+`cannot find font` 但你认为字体已在目录里，加 `--debug` 可看到每个被跳过文件的
+路径和异常堆栈：
+
+```bash
+uv run ./font-metrics.py --debug 'My Family Name'
+```
+
+`--debug` 只输出我们自己的诊断（字体文件路径 + 堆栈），fontTools 内部的表解析
+日志会被压制，默认不加时完全静默。
+
 ## 调试（Trae / VS Code）
 
 本项目是 PEP 723 单文件脚本，没有 `.venv`，而 `uv run --script` 又不允许
@@ -111,9 +122,10 @@ just upgrade    # fontTools 升级到允许范围内的最新版
 
 项目刻意不设 pyproject.toml、不建 `.venv`：ruff 通过 `uv tool run` 临时拉取并把版本
 钉死在 [Justfile](./Justfile) 命令里（`ruff@0.16.10`），不污染项目目录；
-lint 规则显式写在 [ruff.toml](./ruff.toml)（`E4/E7/E9/F`），不跟随 ruff
-默认规则集漂移——脚本里刻意统一的 `%` 格式化和扫描坏字体时的宽泛 except
-不属于错误。
+lint 规则显式写在 [ruff.toml](./ruff.toml)（`E4/E7/E9/F` + `BLE001/S112`），不跟随 ruff
+默认规则集漂移——脚本里刻意统一的 `%` 格式化（UP031）不属于错误；扫描坏字体时
+吞掉的宽泛 except 已用 `--debug` 下的 `logger.debug(exc_info=True)` 记录，故
+BLE001/S112 以单码加入规则集。
 
 ## 输出说明
 

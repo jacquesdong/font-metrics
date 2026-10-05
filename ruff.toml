@@ -9,6 +9,7 @@ target-version = "py38"
 # 一次性扩到 413 条，新增一堆观点性检查，又丢掉一些语法检查。
 # https://astral.sh/blog/ruff-v0.16.0
 # 新版默认集含 UP/BLE/S 等（可使用 `just lint --isolated --statistics` 查看），
-# 会把刻意统一的 % 格式化（UP031）和扫描坏字体时刻意吞掉的宽泛 except
-# （BLE001/S112）报成问题。当前只守语法级 + 拼写级错误；想加规则就往这里加。
-select = ["E4", "E7", "E9", "F"]
+# 会把刻意统一的 % 格式化（UP031）报成问题，故不引入整个默认集。
+# 扫描坏字体时原本吞掉的宽泛 except 现已改用 logger.debug(exc_info=True)
+# 记录，因此把 BLE001/S112 两条以单码加入 select（不引入整个 BLE/S 前缀）。
+select = ["E4", "E7", "E9", "F", "BLE001", "S112"]

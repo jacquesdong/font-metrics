@@ -24,6 +24,7 @@ PEP 723 metadata above):  uv run ./font-metrics.py FONT
 """
 
 import argparse
+import logging
 import os
 import sys
 
@@ -34,6 +35,8 @@ FONT_DIRS = [
     "/usr/local/share/fonts",
     "/usr/share/fonts",
 ]
+
+logger = logging.getLogger("font-metrics")
 
 # codepoint, label
 PROBES = [
@@ -78,12 +81,14 @@ def resolve_font(spec):
                 try:
                     n = TTFont(path, fontNumber=0, lazy=True).reader.numFonts
                 except Exception:
+                    logger.debug("skip %s: cannot read font count", path, exc_info=True)
                     continue
                 for i in range(n):
                     try:
                         f = TTFont(path, fontNumber=i, lazy=True)
                         fam = f["name"].getDebugName(1)
                     except Exception:
+                        logger.debug("skip %s #%d: cannot read name", path, i, exc_info=True)
                         fam = None
                     if fam == spec:
                         return path, i
@@ -91,6 +96,7 @@ def resolve_font(spec):
                 try:
                     fam = TTFont(path, lazy=True)["name"].getDebugName(1)
                 except Exception:
+                    logger.debug("skip %s: cannot read name", path, exc_info=True)
                     fam = None
                 if fam == spec:
                     return path
@@ -193,12 +199,20 @@ def main():
     ap.add_argument("--grep", help="filter --list output by regex")
     ap.add_argument("--index", type=int, default=0, help="subfont index for .ttc (default 0)")
     ap.add_argument("--size", type=float, default=0, help="font size in px for pixel columns")
+    ap.add_argument("--debug", action="store_true",
+                    help="print tracebacks for font files skipped while scanning")
     args = ap.parse_args()
 
     try:
         import fontTools  # noqa: F401
     except ImportError:
         die("fontTools is required: run with 'uv run ./font-metrics.py' or 'pip install fonttools'")
+
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.WARNING,
+                        format="%(message)s")
+    # 我们只关心自家 font-metrics logger 的调试输出，fontTools 会把每个字体的
+    # 表解析细节打成 DEBUG/INFO，压回 WARNING 以免 --debug 被内部噪音淹没。
+    logging.getLogger("fontTools").setLevel(logging.WARNING)
 
     if args.list:
         path = resolve_font(args.list)

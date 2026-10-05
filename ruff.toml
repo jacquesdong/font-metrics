@@ -2,6 +2,12 @@
 # target-version 与脚本头部 requires-python = ">=3.8" 对齐。
 target-version = "py38"
 
+# 不用默认 88，脚本刻意保持 printf 风格的长 print 单行（最长行约 136），
+# 让一条语句可被一次 grep 完整看到；ruff lint 与 format 共用此宽度。
+line-length = 136
+
+[format]
+
 [lint]
 # https://docs.astral.sh/ruff/rules/
 #

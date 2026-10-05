@@ -120,6 +120,7 @@ def die(msg):
 def list_subfonts(path, pattern=None):
     import re
     from fontTools.ttLib import TTFont
+
     rx = None
     if pattern:
         try:
@@ -141,6 +142,7 @@ def list_subfonts(path, pattern=None):
 
 def measure(path, index):
     from fontTools.ttLib import TTFont
+
     f = TTFont(path, fontNumber=index, lazy=True)
     upm = f["head"].unitsPerEm
     cmap = f.getBestCmap()
@@ -181,8 +183,7 @@ def print_info(info, size):
             print("  %-10s: %.2fem%s" % (label, a / info["upm"], extra))
     am, az = info["ASCII 'm'"], info["CJK  '中'"]
     if am and az:
-        print("  中/m ratio: %.2f  %s" %
-              (az / am, "(CJK == 2 ASCII cells)" if round(az / am, 2) == 2.00 else ""))
+        print("  中/m ratio: %.2f  %s" % (az / am, "(CJK == 2 ASCII cells)" if round(az / am, 2) == 2.00 else ""))
     print("  xHeight    : %.2fem" % (info["xheight"] / info["upm"]))
     print("  capHeight  : %.2fem" % (info["capheight"] / info["upm"]))
 
@@ -193,42 +194,35 @@ def compare(a, b, size):
     ax = a["xheight"] / a["upm"]
     bx = b["xheight"] / b["upm"]
     print("Comparison at fontSize %gpx:" % size)
-    print("  ASCII cell: %s %.1fpx | %s %.1fpx (ratio %.2f)" %
-          (a["name"], am * size, b["name"], bm * size, bm / am))
-    print("  x-height  : %s %.1fpx | %s %.1fpx (ratio %.2f)" %
-          (a["name"], ax * size, b["name"], bx * size, bx / ax))
-    print("  for %s to match %s @%g: size %.1f (cell) / %.1f (x-height)" %
-          (b["name"], a["name"], size, size * am / bm, size * ax / bx))
+    print("  ASCII cell: %s %.1fpx | %s %.1fpx (ratio %.2f)" % (a["name"], am * size, b["name"], bm * size, bm / am))
+    print("  x-height  : %s %.1fpx | %s %.1fpx (ratio %.2f)" % (a["name"], ax * size, b["name"], bx * size, bx / ax))
+    print("  for %s to match %s @%g: size %.1f (cell) / %.1f (x-height)" % (b["name"], a["name"], size, size * am / bm, size * ax / bx))
 
 
+# fmt: off
 CMD_LIST    = "list"
 CMD_INFO    = "info"
 CMD_COMPARE = "compare"
+# fmt: on
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Inspect monospace font metrics.")
-    parser.add_argument("--debug", action="store_true",
-                        help="print tracebacks for font files skipped while scanning")
+    parser.add_argument("--debug", action="store_true", help="print tracebacks if failed while scanning")
     command_parser = parser.add_subparsers(dest="command", required=True)
 
     parser_list = command_parser.add_parser(CMD_LIST, help="list subfonts of a .ttc collection")
-    parser_list.add_argument("ttc", metavar="TTC",
-        help="path or file name of a .ttc collection")
+    parser_list.add_argument("ttc", metavar="TTC", help="path or file name of a .ttc collection")
     parser_list.add_argument("--grep", help="filter output by regex")
 
     parser_info = command_parser.add_parser(CMD_INFO, help="show metrics of one font")
-    parser_info.add_argument("font", help="font path, file name or family name")
-    parser_info.add_argument("--index", type=int, default=0,
-        help="subfont index for .ttc (default 0)")
-    parser_info.add_argument("--size", type=float, default=0,
-        help="font size in px for pixel columns")
+    parser_info.add_argument("font", metavar="FONT", help="font path, file name or family name")
+    parser_info.add_argument("--index", type=int, default=0, help="subfont index for .ttc (default 0)")
+    parser_info.add_argument("--size", type=float, default=0, help="font size in px for pixel columns")
 
     parser_compare = command_parser.add_parser(CMD_COMPARE, help="compare two fonts at a font size")
-    parser_compare.add_argument("fonts", nargs=2, metavar="FONT",
-        help="two fonts to compare (path, file name or family name)")
-    parser_compare.add_argument("--size", type=float, required=True,
-        help="font size in px (required)")
+    parser_compare.add_argument("fonts", nargs=2, metavar="FONT", help="font path, file name or family name")
+    parser_compare.add_argument("--size", type=float, required=True, help="font size in px (required)")
 
     return parser
 
@@ -271,7 +265,7 @@ def main():
         print()
         compare(infos[0], infos[1], args.size)
     else:
-        # 你是不是新增子命令，但漏了处理
+        # 走到这里说明新增了子命令却漏了分派
         raise RuntimeError("unhandled command: %r" % args.command)
 
 

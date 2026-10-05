@@ -118,7 +118,8 @@ uv run --no-project --with fonttools --with debugpy python -m debugpy \
 ```bash
 just            # 列出配方
 just lint       # ruff 语法级/拼写级检查
-just check      # 提交门禁，目前等同 lint；以后加测试会往这里追加
+just format     # ruff 自动格式化
+just check      # 提交门禁：lint + 格式检查；以后加测试会往这里追加
 just lock       # 改完脚本头部 PEP 723 依赖后重新锁定
 just upgrade    # fontTools 升级到允许范围内的最新版
 ```
@@ -128,7 +129,7 @@ just upgrade    # fontTools 升级到允许范围内的最新版
 lint 规则显式写在 [ruff.toml](./ruff.toml)（`E4/E7/E9/F` + `BLE001/S112`），不跟随 ruff
 默认规则集漂移——脚本里刻意统一的 `%` 格式化（UP031）不属于错误；扫描坏字体时
 吞掉的宽泛 except 已用 `--debug` 下的 `logger.debug(exc_info=True)` 记录，故
-BLE001/S112 以单码加入规则集。
+BLE001/S112 以单码加入规则集。格式化同样走 ruff（`just format`）。
 
 ## 输出说明
 

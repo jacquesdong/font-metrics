@@ -51,6 +51,8 @@ def split_index(spec):
     head, sep, tail = spec.rpartition(":")
     if head and sep and tail.isdigit():
         return head, int(tail)
+    if head and sep and tail.startswith("-") and tail[1:].isdigit():
+        raise ValueError("font subfont index must be a non-negative integer: %r" % tail)
     return spec, None
 
 
@@ -119,9 +121,17 @@ def xheight_na(info):
 
 
 def measure(path, index):
-    from fontTools.ttLib import TTFont
+    from fontTools.ttLib import TTFont, TTLibError
 
-    f = TTFont(path, fontNumber=index, lazy=True)
+    try:
+        f = TTFont(path, fontNumber=index, lazy=True)
+    except TTLibError as e:
+        # 序号越界（ttc 才有多个子字体）：打开 #0 拿总数，给出合法范围
+        try:
+            n = TTFont(path, fontNumber=0, lazy=True).reader.numFonts
+        except TTLibError:
+            raise ValueError("cannot open font %s: %s" % (path, e))
+        raise ValueError("subfont #%d not found in %s (valid 0..%d)" % (index, path, n - 1))
     upm = f["head"].unitsPerEm
     cmap = f.getBestCmap()
     hmtx = f["hmtx"]
@@ -302,7 +312,13 @@ def main():
     if handler is None:
         # 走到这里说明新增了子命令却漏了在 COMMANDS 登记
         raise RuntimeError("unhandled command: %r" % args.command)
-    handler(args)
+
+    try:
+        handler(args)
+    except ValueError as e:
+        # 默认只给一行错误；--debug 时打印完整堆栈定位问题
+        logger.debug("font argument error", exc_info=True)
+        die(str(e))
 
 
 if __name__ == "__main__":

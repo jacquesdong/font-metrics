@@ -197,6 +197,11 @@ Python `unicodedata.east_asian_width(c)` 把字符分为：
 6. **字体 cask 名要核实**：霞鹜文楷等宽在 Homebrew 只有 TC 版
    （`font-lxgw-wenkai-mono-tc`），简体环境会出繁体字形；Maple 的中文版叫
    `font-maple-mono-cn`。给安装命令前先 `brew search` 验证。
+7. **OS/2 v0/v1 上 `sxHeight`/`sCapHeight` 属性根本不存在**。字段是 v2 才加的，
+   fontTools 对旧表不会创建对应属性，直接 `os2.sxHeight` 抛 `AttributeError`
+   （macOS 自带 Arial Unicode MS 即 OS/2 v1）；极少数字体还可能完全没有 OS/2
+   表，`f["OS/2"]` 会 KeyError。正确姿势是 `f.get("OS/2")` +
+   `getattr(os2, "sxHeight", None)`，并读 `os2.version` 区分「无表」与「旧表」。
 
 ---
 
@@ -210,7 +215,8 @@ f = TTFont("MapleMono-CN-Regular.ttf", lazy=True)
 upm = f["head"].unitsPerEm                # 1000
 cmap = f.getBestCmap()                     # {codepoint: glyphName}
 advance = f["hmtx"][cmap[0x4E2D]][0]       # 1200 -> 1.20em
-xheight = f["OS/2"].sxHeight              # 550
+xheight = f["OS/2"].sxHeight              # 550（仅 OS/2 v2+；旧表要用
+                                          #  getattr(f.get("OS/2"), "sxHeight", None)）
 family = f["name"].getDebugName(1)         # 'Maple Mono CN'
 
 # TTC 合集：只打开第 i 个子字体

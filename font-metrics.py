@@ -112,6 +112,45 @@ def load_font(spec, default_index):
     return measure(path, index)
 
 
+def xheight_na(info):
+    """解释 x-height/cap-height 为何缺失：无 OS/2 表，或表版本低于引入该字段的 v2。"""
+    v = info["os2ver"]
+    return "(n/a, no OS/2 table)" if v is None else "(n/a, OS/2 v%d < 2)" % v
+
+
+def measure(path, index):
+    from fontTools.ttLib import TTFont
+
+    f = TTFont(path, fontNumber=index, lazy=True)
+    upm = f["head"].unitsPerEm
+    cmap = f.getBestCmap()
+    hmtx = f["hmtx"]
+    # sxHeight/sCapHeight 是 OS/2 v2 才有的字段，老字体（v0/v1）甚至可能没有 OS/2 表
+    os2 = f.get("OS/2")
+
+    def adv(cp):
+        return hmtx[cmap[cp]][0] if cp in cmap else None
+
+    def metric(attr):
+        return getattr(os2, attr, None) if os2 is not None else None
+
+    name = f["name"].getDebugName(1)
+    info = {
+        "name": name,
+        "path": path,
+        "index": index,
+        "upm": upm,
+        "os2ver": getattr(os2, "version", None),
+        "xheight": metric("sxHeight"),
+        "capheight": metric("sCapHeight"),
+    }
+    for cp, label in PROBES:
+        a = adv(cp)
+        info[label] = a
+    f.close()
+    return info
+
+
 def die(msg):
     print("font-metrics: %s" % msg, file=sys.stderr)
     sys.exit(1)
@@ -140,34 +179,6 @@ def list_subfonts(path, pattern=None):
             print("%4d  %s" % (i, name))
 
 
-def measure(path, index):
-    from fontTools.ttLib import TTFont
-
-    f = TTFont(path, fontNumber=index, lazy=True)
-    upm = f["head"].unitsPerEm
-    cmap = f.getBestCmap()
-    hmtx = f["hmtx"]
-    os2 = f["OS/2"]
-
-    def adv(cp):
-        return hmtx[cmap[cp]][0] if cp in cmap else None
-
-    name = f["name"].getDebugName(1)
-    info = {
-        "name": name,
-        "path": path,
-        "index": index,
-        "upm": upm,
-        "xheight": os2.sxHeight,
-        "capheight": os2.sCapHeight,
-    }
-    for cp, label in PROBES:
-        a = adv(cp)
-        info[label] = a
-    f.close()
-    return info
-
-
 def print_info(info, size):
     print("%s" % info["name"])
     src = info["path"]
@@ -184,19 +195,29 @@ def print_info(info, size):
     am, az = info["ASCII 'm'"], info["CJK  '中'"]
     if am and az:
         print("  中/m ratio: %.2f  %s" % (az / am, "(CJK == 2 ASCII cells)" if round(az / am, 2) == 2.00 else ""))
-    print("  xHeight    : %.2fem" % (info["xheight"] / info["upm"]))
-    print("  capHeight  : %.2fem" % (info["capheight"] / info["upm"]))
+    for key, label in (("xheight", "xHeight"), ("capheight", "capHeight")):
+        v = info[key]
+        text = "%.2fem" % (v / info["upm"]) if v else xheight_na(info)
+        print("  %-10s: %s" % (label, text))
 
 
 def compare(a, b, size):
     am = a["ASCII 'm'"] / a["upm"]
     bm = b["ASCII 'm'"] / b["upm"]
-    ax = a["xheight"] / a["upm"]
-    bx = b["xheight"] / b["upm"]
     print("Comparison at fontSize %gpx:" % size)
     print("  ASCII cell: %s %.1fpx | %s %.1fpx (ratio %.2f)" % (a["name"], am * size, b["name"], bm * size, bm / am))
-    print("  x-height  : %s %.1fpx | %s %.1fpx (ratio %.2f)" % (a["name"], ax * size, b["name"], bx * size, bx / ax))
-    print("  for %s to match %s @%g: size %.1f (cell) / %.1f (x-height)" % (b["name"], a["name"], size, size * am / bm, size * ax / bx))
+    match = "  for %s to match %s @%g: size %.1f (cell)" % (b["name"], a["name"], size, size * am / bm)
+    # x-height 需要双方都有（OS/2 v2+）才能算 ratio 和等效字号，否则各报各的
+    if a["xheight"] and b["xheight"]:
+        ax = a["xheight"] / a["upm"]
+        bx = b["xheight"] / b["upm"]
+        print("  x-height  : %s %.1fpx | %s %.1fpx (ratio %.2f)" % (a["name"], ax * size, b["name"], bx * size, bx / ax))
+        match += " / %.1f (x-height)" % (size * ax / bx)
+    else:
+        xa = "%.1fpx" % (a["xheight"] / a["upm"] * size) if a["xheight"] else xheight_na(a)
+        xb = "%.1fpx" % (b["xheight"] / b["upm"] * size) if b["xheight"] else xheight_na(b)
+        print("  x-height  : %s %s | %s %s" % (a["name"], xa, b["name"], xb))
+    print(match)
 
 
 # fmt: off

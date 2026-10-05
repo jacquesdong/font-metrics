@@ -28,6 +28,8 @@ import logging
 import os
 import sys
 
+logger = logging.getLogger("font-metrics")
+
 FONT_DIRS = [
     os.path.expanduser("~/Library/Fonts"),
     "/Library/Fonts",
@@ -35,8 +37,6 @@ FONT_DIRS = [
     "/usr/local/share/fonts",
     "/usr/share/fonts",
 ]
-
-logger = logging.getLogger("font-metrics")
 
 # codepoint, label
 PROBES = [
@@ -192,22 +192,21 @@ def compare(a, b, size):
           (b["name"], a["name"], size, size * am / bm, size * ax / bx))
 
 
-def main():
-    ap = argparse.ArgumentParser(description="Inspect monospace font metrics.")
-    ap.add_argument("fonts", nargs="*", help="font path, file name or family name")
-    ap.add_argument("--list", metavar="TTC", help="list subfonts of a .ttc collection")
-    ap.add_argument("--grep", help="filter --list output by regex")
-    ap.add_argument("--index", type=int, default=0, help="subfont index for .ttc (default 0)")
-    ap.add_argument("--size", type=float, default=0, help="font size in px for pixel columns")
-    ap.add_argument("--debug", action="store_true",
-                    help="print tracebacks for font files skipped while scanning")
-    args = ap.parse_args()
+def build_parser():
+    parser = argparse.ArgumentParser(description="Inspect monospace font metrics.")
 
-    try:
-        import fontTools  # noqa: F401
-    except ImportError:
-        die("fontTools is required: run with 'uv run ./font-metrics.py' or 'pip install fonttools'")
+    parser.add_argument("fonts", nargs="*", help="font path, file name or family name")
+    parser.add_argument("--list", metavar="TTC", help="list subfonts of a .ttc collection")
+    parser.add_argument("--grep", help="filter --list output by regex")
+    parser.add_argument("--index", type=int, default=0, help="subfont index for .ttc (default 0)")
+    parser.add_argument("--size", type=float, default=0, help="font size in px for pixel columns")
+    parser.add_argument("--debug", action="store_true",
+                        help="print tracebacks for font files skipped while scanning")
 
+    return parser
+
+
+def setup_logging(args):
     # 只控制自家 font-metrics logger，root 保持 WARNING。handler 放行 DEBUG，
     # 由各 logger 的级别决定是否输出：--debug 时仅我们的 logger 降到 DEBUG，
     # 第三方库（如 fontTools）维持 WARNING，不会被顺带打开。
@@ -218,6 +217,18 @@ def main():
     logging.getLogger().setLevel(logging.WARNING)
     logger.setLevel(logging.DEBUG if args.debug else logging.WARNING)
 
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+
+    try:
+        import fontTools  # noqa: F401
+    except ImportError:
+        die("fontTools is required: run with 'uv run ./font-metrics.py' or 'pip install fonttools'")
+
+    setup_logging(args)
+
     if args.list:
         path = resolve_font(args.list)
         if not path.endswith(".ttc"):
@@ -226,7 +237,7 @@ def main():
         return
 
     if not args.fonts:
-        ap.print_help()
+        parser.print_help()
         sys.exit(1)
 
     if len(args.fonts) > 2:

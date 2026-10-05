@@ -121,7 +121,8 @@ uv run --no-project --with fonttools --with debugpy python -m debugpy \
 just            # 列出配方
 just lint       # ruff 语法级/拼写级检查
 just format     # ruff 自动格式化
-just check      # 提交门禁：lint + 格式检查；以后加测试会往这里追加
+just test       # 运行脚本内 doctest（系统 python，无需 fontTools）
+just check      # 提交门禁：lint + 格式检查 + doctest
 just lock       # 改完脚本头部 PEP 723 依赖后重新锁定
 just upgrade    # fontTools 升级到允许范围内的最新版
 ```

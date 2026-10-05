@@ -47,7 +47,23 @@ PROBES = [
 
 
 def split_index(spec):
-    """Split a 'font:index' suffix (index is a non-negative integer)."""
+    """Split a 'font:index' suffix (index is a non-negative integer).
+
+    >>> split_index("Sarasa.ttc:205")
+    ('Sarasa.ttc', 205)
+    >>> split_index("font.ttf")
+    ('font.ttf', None)
+    >>> split_index("a:b:205")  # 多个冒号时取最右一个
+    ('a:b', 205)
+    >>> split_index(":205")     # 冒号前为空：不是序号后缀
+    (':205', None)
+    >>> split_index("x.ttc:")   # 序号为空
+    ('x.ttc:', None)
+    >>> split_index("x.ttc:-1")  # 负数：显式报错而非静默当成文件名
+    Traceback (most recent call last):
+        ...
+    ValueError: font subfont index must be a non-negative integer: '-1'
+    """
     head, sep, tail = spec.rpartition(":")
     if head and sep and tail.isdigit():
         return head, int(tail)

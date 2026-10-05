@@ -24,6 +24,7 @@ PEP 723 metadata above):  uv run ./font-metrics.py info FONT
 """
 
 import argparse
+import contextlib
 import logging
 import os
 import sys
@@ -118,6 +119,22 @@ def choose_face(matches):
     raise FontError("\n".join(lines))
 
 
+@contextlib.contextmanager
+def open_face(path, index=None):
+    """打开一个 lazy TTFont 并保证底层文件句柄关闭（供 with 使用）。
+
+    直接把路径交给 fontTools 时，若构造失败（典型：ttc 序号越界，
+    SFNTReader 抛错前已 open 文件），句柄挂在半成品 reader 上、调用方拿不回
+    对象，只能等 GC 回收并泄漏 ResourceWarning。这里由我们持有文件流：
+    无论构造成功还是抛错，with 退出时都会关闭。
+    """
+    from fontTools.ttLib import TTFont
+
+    with open(path, "rb") as stream:
+        kwargs = {"fontNumber": index} if index is not None else {}
+        yield TTFont(stream, lazy=True, **kwargs)
+
+
 def resolve_font(spec):
     """Turn a path / file name / family name into path, or (path, index).
 
@@ -137,7 +154,7 @@ def resolve_font(spec):
                 return p
 
     try:
-        from fontTools.ttLib import TTFont, TTLibError
+        from fontTools.ttLib import TTLibError
     except ImportError:
         die("fontTools is required: run with 'uv run ./font-metrics.py' or 'pip install fonttools'")
 
@@ -157,14 +174,16 @@ def resolve_font(spec):
 
             if entry.endswith(".ttc"):
                 try:
-                    n = TTFont(path, fontNumber=0, lazy=True).reader.numFonts
+                    with open_face(path, 0) as probe:
+                        n = probe.reader.numFonts
                 except Exception:
                     logger.debug("skip %s: cannot read font count", path, exc_info=True)
                     continue
                 for i in range(n):
                     try:
-                        name_table = TTFont(path, fontNumber=i, lazy=True)["name"]
-                        family, subfamily = name_table.getDebugName(1), name_table.getDebugName(2)
+                        with open_face(path, i) as face:
+                            name_table = face["name"]
+                            family, subfamily = name_table.getDebugName(1), name_table.getDebugName(2)
                     except Exception:
                         logger.debug("skip %s #%d: cannot read name", path, i, exc_info=True)
                         family = subfamily = None
@@ -172,8 +191,9 @@ def resolve_font(spec):
                         matches.append((path, i, subfamily))
             else:
                 try:
-                    name_table = TTFont(path, lazy=True)["name"]
-                    family, subfamily = name_table.getDebugName(1), name_table.getDebugName(2)
+                    with open_face(path) as face:
+                        name_table = face["name"]
+                        family, subfamily = name_table.getDebugName(1), name_table.getDebugName(2)
                 except Exception:
                     logger.debug("skip %s: cannot read name", path, exc_info=True)
                     family = subfamily = None
@@ -202,7 +222,8 @@ def resolve_font(spec):
         actual_family = None
         if not multi_file:
             try:
-                actual_family = TTFont(first_path, fontNumber=spec_index, lazy=True)["name"].getDebugName(1)
+                with open_face(first_path, spec_index) as check:
+                    actual_family = check["name"].getDebugName(1)
             except TTLibError:
                 return first_path, spec_index
 
@@ -250,51 +271,55 @@ def xheight_na(info):
 
 
 def measure(path, index):
-    from fontTools.ttLib import TTFont, TTLibError
+    from fontTools.ttLib import TTLibError
 
+    opened = False
     try:
-        f = TTFont(path, fontNumber=index, lazy=True)
+        with open_face(path, index) as f:
+            opened = True
+            # 非合集字体只有一个子字体，fontTools 对其传 fontNumber 会静默忽略；
+            # 合集 reader 带 numFonts，单体 SFNTReader 没有，据此拦下越界序号，
+            # 避免单体字体被错误标注成 [#N]（:0 对单体合法，不拦）
+            if index and getattr(f.reader, "numFonts", None) is None:
+                raise FontError("subfont #%d not found in %s (not a font collection, only #0 is valid)" % (index, path))
+
+            upm = f["head"].unitsPerEm
+            cmap = f.getBestCmap()
+            hmtx = f["hmtx"]
+            # sxHeight/sCapHeight 是 OS/2 v2 才有的字段，老字体（v0/v1）甚至可能没有 OS/2 表
+            os2 = f.get("OS/2")
+
+            def adv(cp):
+                return hmtx[cmap[cp]][0] if cp in cmap else None
+
+            def metric(attr):
+                return getattr(os2, attr, None) if os2 is not None else None
+
+            name = f["name"].getDebugName(1)
+            info = {
+                "name": name,
+                "path": path,
+                "index": index,
+                "upm": upm,
+                "os2ver": getattr(os2, "version", None),
+                "xheight": metric("sxHeight"),
+                "capheight": metric("sCapHeight"),
+            }
+            for cp, label in PROBES:
+                a = adv(cp)
+                info[label] = a
+            return info
     except TTLibError as e:
+        if opened:
+            # 已成功打开、读表阶段才失败：不是序号问题，保持原样上抛
+            raise
         # 序号越界（ttc 才有多个子字体）：打开 #0 拿总数，给出合法范围
         try:
-            n = TTFont(path, fontNumber=0, lazy=True).reader.numFonts
+            with open_face(path, 0) as probe:
+                n = probe.reader.numFonts
         except TTLibError:
             raise FontError("cannot open font %s: %s" % (path, e))
         raise FontError("subfont #%d not found in %s (valid 0..%d)" % (index, path, n - 1))
-
-    # 非合集字体只有一个子字体，fontTools 对其传 fontNumber 会静默忽略；
-    # 合集 reader 带 numFonts，单体 SFNTReader 没有，据此拦下越界序号，
-    # 避免单体字体被错误标注成 [#N]（:0 对单体合法，不拦）
-    if index and getattr(f.reader, "numFonts", None) is None:
-        raise FontError("subfont #%d not found in %s (not a font collection, only #0 is valid)" % (index, path))
-
-    upm = f["head"].unitsPerEm
-    cmap = f.getBestCmap()
-    hmtx = f["hmtx"]
-    # sxHeight/sCapHeight 是 OS/2 v2 才有的字段，老字体（v0/v1）甚至可能没有 OS/2 表
-    os2 = f.get("OS/2")
-
-    def adv(cp):
-        return hmtx[cmap[cp]][0] if cp in cmap else None
-
-    def metric(attr):
-        return getattr(os2, attr, None) if os2 is not None else None
-
-    name = f["name"].getDebugName(1)
-    info = {
-        "name": name,
-        "path": path,
-        "index": index,
-        "upm": upm,
-        "os2ver": getattr(os2, "version", None),
-        "xheight": metric("sxHeight"),
-        "capheight": metric("sCapHeight"),
-    }
-    for cp, label in PROBES:
-        a = adv(cp)
-        info[label] = a
-    f.close()
-    return info
 
 
 def die(msg):
@@ -304,7 +329,6 @@ def die(msg):
 
 def list_subfonts(path, pattern=None):
     import re
-    from fontTools.ttLib import TTFont
 
     rx = None
     if pattern:
@@ -312,17 +336,17 @@ def list_subfonts(path, pattern=None):
             rx = re.compile(pattern, re.I)
         except re.error:
             pass
-    f0 = TTFont(path, fontNumber=0, lazy=True)
-    n = f0.reader.numFonts
+    with open_face(path, 0) as f0:
+        n = f0.reader.numFonts
     for i in range(n):
-        f = TTFont(path, fontNumber=i, lazy=True)
-        name = f["name"].getDebugName(1) or "?"
-        if rx is None:
-            ok = pattern is None or pattern.lower() in name.lower()
-        else:
-            ok = bool(rx.search(name))
-        if ok:
-            print("%4d  %s" % (i, name))
+        with open_face(path, i) as f:
+            name = f["name"].getDebugName(1) or "?"
+            if rx is None:
+                ok = pattern is None or pattern.lower() in name.lower()
+            else:
+                ok = bool(rx.search(name))
+            if ok:
+                print("%4d  %s" % (i, name))
 
 
 def print_info(info, size):

@@ -17,7 +17,10 @@
 必须对号入座到真正包含该 family 的文件，不能死守 matches[0] 所在文件。
 """
 
+import contextlib
+import gc
 import importlib.util
+import io
 import os
 import shutil
 import tempfile
@@ -28,10 +31,8 @@ from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTCollection
 
-# 扫描字体时产品代码刻意以 lazy 方式开 TTFont 且不逐个关闭（真实运行的既有行为），
-# 合成用例大量创建/回收临时字体时会在 GC 阶段冒出 unclosed file 提示；
-# 这些与被测断言无关，在回归进程内静音，避免淹没测试结果
-warnings.filterwarnings("ignore", category=ResourceWarning)
+# 注意：产品代码必须显式 close 打开的 lazy TTFont；各用例在 setUp 里把
+# ResourceWarning 升级为异常，任何句柄泄漏都会让回归直接失败
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -69,12 +70,15 @@ class ResolveFontIndexTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="fm-tests-")
         self._orig_dirs = fm.FONT_DIRS
-        # unittest 的 TextTestRunner 进入 catch_warnings 后会把全部 Warning
-        # 重置成 default（模块级 filter 失效），要在每个用例内重新压上
-        warnings.filterwarnings("ignore", category=ResourceWarning)
+        # unittest 的 TextTestRunner 进入 catch_warnings 后会重置过滤器，
+        # 必须在每个用例内注册：常规析构路径上漏关 lazy TTFont 会立刻报错。
+        # 注意 GC 析构时抛的警告只会 unraisable、变不成失败，因此另由
+        # track_opened_files 两个哨兵对 closed 做确定性断言兜底
+        warnings.filterwarnings("error", category=ResourceWarning)
 
     def tearDown(self):
         fm.FONT_DIRS = self._orig_dirs
+        gc.collect()
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def font_dir(self, name):
@@ -169,6 +173,66 @@ class ResolveFontIndexTest(unittest.TestCase):
         fm.FONT_DIRS = [da, db]
 
         self.assertEqual(fm.resolve_font("Fam"), (a, 0))
+
+    def test_list_subfonts_closes_every_open(self):
+        # list 要开一次 #0 拿总数、再逐个子字体开一次；漏关任意一个都会触发哨兵
+        d = self.font_dir("l")
+        path = os.path.join(d, "l.ttc")
+        save_ttc(path, [make_font("Fam", "Regular"), make_font("Neighbor", "Regular")])
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            fm.list_subfonts(path)
+        lines = buf.getvalue().splitlines()
+        self.assertEqual(lines, ["   0  Fam", "   1  Neighbor"])
+
+    @contextlib.contextmanager
+    def track_opened_files(self):
+        # 记录上下文内所有 open() 出来的文件流；退出后调用方断言全部已关。
+        # 不靠 ResourceWarning——它在 GC 析构里抛时只是 unraisable，无法让用例失败；
+        # 直接检查 closed 才是确定性的关闭语义断言
+        import builtins
+
+        created = []
+        real_open = builtins.open
+
+        def tracking_open(file, *args, **kwargs):
+            f = real_open(file, *args, **kwargs)
+            created.append(f)
+            return f
+
+        builtins.open = tracking_open
+        try:
+            yield created
+        finally:
+            builtins.open = real_open
+
+    def test_open_face_closes_stream_on_success(self):
+        d = self.font_dir("o1")
+        path = os.path.join(d, "o.ttc")
+        save_ttc(path, [make_font("Fam", "Regular"), make_font("Other", "Regular")])
+
+        with self.track_opened_files() as opened:
+            with fm.open_face(path, 0) as f:
+                self.assertEqual(f["name"].getDebugName(1), "Fam")
+        self.assertTrue([f for f in opened if "rb" in f.mode])
+        self.assertTrue(all(f.closed for f in opened), [f.closed for f in opened])
+
+    def test_open_face_closes_stream_when_constructor_fails(self):
+        # ttc 序号越界：fontTools 构造 TTFont 抛错前已自行 open 文件，
+        # 半成品 reader 拿不回；open_face 必须靠自持文件流保证不留开口
+        from fontTools.ttLib import TTLibError
+
+        d = self.font_dir("o2")
+        path = os.path.join(d, "o.ttc")
+        save_ttc(path, [make_font("Fam", "Regular"), make_font("Other", "Regular")])
+
+        with self.track_opened_files() as opened:
+            with self.assertRaises(TTLibError):
+                with fm.open_face(path, 9):
+                    pass
+        self.assertTrue([f for f in opened if "rb" in f.mode])
+        self.assertTrue(all(f.closed for f in opened), [f.closed for f in opened])
 
 
 if __name__ == "__main__":

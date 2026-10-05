@@ -77,6 +77,12 @@ info 和 compare 通用；序号先用 `list` 子命令查。compare 对比两�
 后缀各自跟随自己的文件（如 `X.ttc:205 X.ttc:445`），这也是不设 `--index`
 选项的原因——单个选项无法分别作用于两个字体参数。
 
+一个 family 名常对应多个面孔（Regular/Italic/Bold/Bold Italic 共用同一
+family 名）。不写序号时工具按惯例自动选唯一的 **Regular**，并在 stderr
+提示一行实际选中的序号；若没有 Regular 或存在多个（如两个目录各装一份），
+会列出全部面孔让你用 `family:序号` 显式指定。`family:序号` 还会核对该序号
+确实属于这个 family，张冠李戴（序号位置是另一个 family）直接报错。
+
 按 family 名查找时，工具会扫描所有字体目录并静默跳过无法解析的文件；若报
 `cannot find font` 但你认为字体已在目录里，加 `--debug` 可看到每个被跳过文件的
 路径和异常堆栈（`--debug` 是全局参数，放在子命令**之前**）：

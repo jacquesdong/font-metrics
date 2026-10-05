@@ -81,12 +81,50 @@ def split_index(spec):
     return spec, None
 
 
+def choose_face(matches):
+    """从同一家族的多个面孔 (path, index, subfamily) 中选出 bare family 名
+    所指的面孔：唯一命中直接返回；否则按惯例取唯一的 Regular/Normal；
+    没有或不止一个 Regular 时抛 FontError 让用户显式指定。
+
+    >>> choose_face([("a.ttc", 0, "Regular")])
+    ('a.ttc', 0, 'Regular')
+    >>> choose_face([("a.ttc", 0, "Bold"), ("a.ttc", 7, "Regular")])
+    ('a.ttc', 7, 'Regular')
+    >>> try:  # 没有 Regular：不猜，报错
+    ...     choose_face([("a.ttc", 0, "Bold"), ("a.ttc", 1, "Italic")])
+    ... except FontError as e:
+    ...     print(str(e).splitlines()[0])
+    ambiguous font family with 2 faces; specify one with ':index':
+    >>> try:  # 两个 Regular（如两个目录各装一份）：同样不猜
+    ...     choose_face([("a.ttc", 0, "Regular"), ("b.ttc", 0, "Normal")])
+    ... except FontError as e:
+    ...     print(str(e).splitlines()[0])
+    ambiguous font family with 2 faces; specify one with ':index':
+    """
+    if len(matches) == 1:
+        return matches[0]
+
+    def is_regular(m):
+        return (m[2] or "").strip().lower() in ("regular", "normal")
+
+    regulars = [m for m in matches if is_regular(m)]
+    if len(regulars) == 1:
+        return regulars[0]
+
+    lines = ["ambiguous font family with %d faces; specify one with ':index':" % len(matches)]
+    for path, index, subfamily in matches:
+        loc = path if index is None else "%s:%d" % (path, index)
+        lines.append("  %s (%s)" % (loc, subfamily or "?"))
+    raise FontError("\n".join(lines))
+
+
 def resolve_font(spec):
     """Turn a path / file name / family name into path, or (path, index).
 
-    family 名命中时返回首个命中的 (path, index)。若 spec 带显式 ':index'
-    且该序号子字体的 family 名与所请求的不符（典型：合集里相邻位置是另一个
-    family），抛 FontError，而不是静默返回错字体的度量。
+    family 名命中多个面孔时由 choose_face 选 Regular，选不出就报错。
+    若 spec 带显式 ':index' 但该序号子字体的 family 名与所请求的不符
+    （典型：合集里相邻位置是另一个 family），抛 FontError 而不是静默
+    返回错字体的度量。
     """
     spec_name, spec_index = split_index(spec)
     if os.path.isfile(spec_name):
@@ -143,10 +181,10 @@ def resolve_font(spec):
 
     if not matches:
         die("cannot find font: %s" % spec_name)
-    path = matches[0][0]
 
     if spec_index is not None:
         # 核对显式序号确实属于所请求的 family；越界/损坏留给 measure 报错
+        path = matches[0][0]
         try:
             actual_family = TTFont(path, fontNumber=spec_index, lazy=True)["name"].getDebugName(1)
         except TTLibError:
@@ -161,7 +199,16 @@ def resolve_font(spec):
             )
         return path, spec_index
 
-    _, found_index, _ = matches[0]
+    # 未指定序号：bare family 名按惯例指 Regular，多面孔时提示一行（不静默）
+    chosen = choose_face(matches)
+    if len(matches) > 1:
+        loc = chosen[0] if chosen[1] is None else "%s:%d" % (chosen[0], chosen[1])
+        print(
+            "font-metrics: note: %d faces of %r found; using %s (%s), add ':index' to pick another"
+            % (len(matches), spec_name, loc, chosen[2]),
+            file=sys.stderr,
+        )
+    path, found_index, _ = chosen
     return path if found_index is None else (path, found_index)
 
 

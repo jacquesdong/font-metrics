@@ -30,6 +30,14 @@ import sys
 
 logger = logging.getLogger("font-metrics")
 
+
+class FontError(Exception):
+    """用户可纠正的字体错误（参数格式、子字体序号、文件无法打开）。
+
+    与程序内部 bug 区分：main 捕获后只报一行，默认不打 traceback。
+    """
+
+
 FONT_DIRS = [
     os.path.expanduser("~/Library/Fonts"),
     "/Library/Fonts",
@@ -59,16 +67,17 @@ def split_index(spec):
     (':205', None)
     >>> split_index("x.ttc:")   # 序号为空
     ('x.ttc:', None)
-    >>> split_index("x.ttc:-1")  # 负数：显式报错而非静默当成文件名
-    Traceback (most recent call last):
-        ...
-    ValueError: font subfont index must be a non-negative integer: '-1'
+    >>> try:  # 负数：显式报错而非静默当成文件名
+    ...     split_index("x.ttc:-1")
+    ... except FontError as e:
+    ...     print(str(e))
+    font subfont index must be a non-negative integer: '-1'
     """
     head, sep, tail = spec.rpartition(":")
     if head and sep and tail.isdigit():
         return head, int(tail)
     if head and sep and tail.startswith("-") and tail[1:].isdigit():
-        raise ValueError("font subfont index must be a non-negative integer: %r" % tail)
+        raise FontError("font subfont index must be a non-negative integer: %r" % tail)
     return spec, None
 
 
@@ -146,14 +155,14 @@ def measure(path, index):
         try:
             n = TTFont(path, fontNumber=0, lazy=True).reader.numFonts
         except TTLibError:
-            raise ValueError("cannot open font %s: %s" % (path, e))
-        raise ValueError("subfont #%d not found in %s (valid 0..%d)" % (index, path, n - 1))
+            raise FontError("cannot open font %s: %s" % (path, e))
+        raise FontError("subfont #%d not found in %s (valid 0..%d)" % (index, path, n - 1))
 
     # 非合集字体只有一个子字体，fontTools 对其传 fontNumber 会静默忽略；
     # 合集 reader 带 numFonts，单体 SFNTReader 没有，据此拦下越界序号，
     # 避免单体字体被错误标注成 [#N]（:0 对单体合法，不拦）
     if index and getattr(f.reader, "numFonts", None) is None:
-        raise ValueError("subfont #%d not found in %s (not a font collection, only #0 is valid)" % (index, path))
+        raise FontError("subfont #%d not found in %s (not a font collection, only #0 is valid)" % (index, path))
 
     upm = f["head"].unitsPerEm
     cmap = f.getBestCmap()
@@ -338,9 +347,9 @@ def main():
 
     try:
         handler(args)
-    except ValueError as e:
+    except FontError as e:
         # 默认只给一行错误；--debug 时打印完整堆栈定位问题
-        logger.debug("font argument error", exc_info=True)
+        logger.debug("failed to load font", exc_info=True)
         die(str(e))
 
 

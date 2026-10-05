@@ -26,7 +26,7 @@ Menlo）不含中文字形，要回退到系统中文字体，回退后的汉字
 brew install uv
 
 # 之后直接运行，首次会自动下载 fontTools
-uv run ./font-metrics.py --size 12 MapleMono-CN-Regular.ttf
+uv run ./font-metrics.py info MapleMono-CN-Regular.ttf
 ```
 
 维护依赖：
@@ -49,15 +49,18 @@ brew install fonttools
 
 ## 使用
 
+三个子命令对应三种动作，`-h` 可查看各自参数：
+
 ```bash
-# 1. 查看单个字体（--size 给出像素换算）
-uv run ./font-metrics.py --size 12 MapleMono-CN-Regular.ttf
+# info：查看单个字体（--size 给出像素换算，可选）
+uv run ./font-metrics.py info MapleMono-CN-Regular.ttf
+uv run ./font-metrics.py info Sarasa-SuperTTC.ttc:205 --size 12
 
-# 2. 对比两款字体，并给出等效字号换算
-uv run ./font-metrics.py --size 12 'Maple Mono CN' 'Sarasa-SuperTTC.ttc:205'
+# compare：对比两款字体并给出等效字号换算（--size 必填）
+uv run ./font-metrics.py compare 'Maple Mono CN' 'Sarasa-SuperTTC.ttc:205' --size 12
 
-# 3. 浏览 .ttc 合集里的子字体（480 个），--grep 支持正则
-uv run ./font-metrics.py --list Sarasa-SuperTTC.ttc --grep 'Mono SC$'
+# list：浏览 .ttc 合集里的子字体（480 个），--grep 支持正则
+uv run ./font-metrics.py list Sarasa-SuperTTC.ttc --grep 'Mono SC$'
 ```
 
 已全局安装 fontTools 时，也可以省略 `uv run` 直接 `./font-metrics.py ...`。
@@ -69,15 +72,15 @@ uv run ./font-metrics.py --list Sarasa-SuperTTC.ttc --grep 'Mono SC$'
   `/usr/local/share/fonts`、`/usr/share/fonts` 中查找
 - **family 名**：如 `'Maple Mono CN'`、`'Sarasa Mono SC'`，自动扫描上述目录解析
 
-`.ttc` 合集用 `文件:序号` 指定子字体（如 `Sarasa-SuperTTC.ttc:205`）；也可以用
-`--index 序号`（注意放在位置参数**之前**）。
+`.ttc` 合集用 `文件:序号` 指定子字体（如 `Sarasa-SuperTTC.ttc:205`）；`info`
+也可以用 `--index 序号`（放在子命令之后、字体参数之前）。
 
 按 family 名查找时，工具会扫描所有字体目录并静默跳过无法解析的文件；若报
 `cannot find font` 但你认为字体已在目录里，加 `--debug` 可看到每个被跳过文件的
-路径和异常堆栈：
+路径和异常堆栈（`--debug` 是全局参数，放在子命令**之前**）：
 
 ```bash
-uv run ./font-metrics.py --debug 'My Family Name'
+uv run ./font-metrics.py --debug info 'My Family Name'
 ```
 
 `--debug` 只输出我们自己的诊断（字体文件路径 + 堆栈），fontTools 内部的表解析
@@ -103,7 +106,7 @@ debugpy 替换启动命令，因此调试通过一个解释器包装脚本解决
 
 ```bash
 uv run --no-project --with fonttools --with debugpy python -m debugpy \
-  --listen 5678 --wait-for-client font-metrics.py --size 12 Menlo.ttc
+  --listen 5678 --wait-for-client font-metrics.py info Menlo.ttc --size 12
 ```
 
 然后在编辑器里用「Attach（端口 5678）」接入。

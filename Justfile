@@ -26,7 +26,7 @@ upgrade:
 # 提交前的门禁：依赖写在头部行，以后加测试就往这里追加
 check: lint
 
-# 运行 font-metrics.py。多词 family 名需双层引号：just run "'Maple Mono CN'"
-# （just 的 {{args}} 不会保留引号，直接 just run 'Maple Mono CN' 会被拆成三个参数）
+# 运行 font-metrics.py。多词 family 名需双层引号：just run info "'Maple Mono CN'"
+# （just 的 {{args}} 不会保留引号，直接 just run info 'Maple Mono CN' 会被拆成三个参数）
 run *args:
 	uv run ./font-metrics.py {{args}}

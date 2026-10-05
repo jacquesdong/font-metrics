@@ -13,14 +13,14 @@ ASCII advance, CJK advance, their ratio (2.00 means CJK == two ASCII cells),
 x-height, cap-height and the advance of the arrow glyph.
 
 Examples:
-  font-metrics.py MapleMono-CN-Regular.ttf
-  font-metrics.py --list Sarasa-SuperTTC.ttc
-  font-metrics.py Sarasa-SuperTTC.ttc:205 MapleMono-CN-Regular.ttf
-  font-metrics.py --size 12 "Maple Mono CN" "Sarasa-SuperTTC.ttc:205"
+  font-metrics.py info MapleMono-CN-Regular.ttf
+  font-metrics.py info Sarasa-SuperTTC.ttc:205 --size 12
+  font-metrics.py compare "Maple Mono CN" "Sarasa-SuperTTC.ttc:205" --size 12
+  font-metrics.py list Sarasa-SuperTTC.ttc
 
 Fonts may be given as a file path, a family name, or a bare file name from
 the usual macOS font directories. Run with uv (fontTools is fetched from the
-PEP 723 metadata above):  uv run ./font-metrics.py FONT
+PEP 723 metadata above):  uv run ./font-metrics.py info FONT
 """
 
 import argparse
@@ -101,6 +101,15 @@ def resolve_font(spec):
                 if fam == spec:
                     return path
     die("cannot find font: %s" % spec)
+
+
+def load_font(spec, default_index):
+    """Resolve a font spec (with optional ':index' suffix) and measure it."""
+    _, explicit = split_index(spec)
+    r = resolve_font(spec)
+    path, found_idx = r if isinstance(r, tuple) else (r, None)
+    index = explicit if explicit is not None else (found_idx or default_index)
+    return measure(path, index)
 
 
 def die(msg):
@@ -192,16 +201,34 @@ def compare(a, b, size):
           (b["name"], a["name"], size, size * am / bm, size * ax / bx))
 
 
+CMD_LIST    = "list"
+CMD_INFO    = "info"
+CMD_COMPARE = "compare"
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Inspect monospace font metrics.")
-
-    parser.add_argument("fonts", nargs="*", help="font path, file name or family name")
-    parser.add_argument("--list", metavar="TTC", help="list subfonts of a .ttc collection")
-    parser.add_argument("--grep", help="filter --list output by regex")
-    parser.add_argument("--index", type=int, default=0, help="subfont index for .ttc (default 0)")
-    parser.add_argument("--size", type=float, default=0, help="font size in px for pixel columns")
     parser.add_argument("--debug", action="store_true",
                         help="print tracebacks for font files skipped while scanning")
+    command_parser = parser.add_subparsers(dest="command", required=True)
+
+    parser_list = command_parser.add_parser(CMD_LIST, help="list subfonts of a .ttc collection")
+    parser_list.add_argument("ttc", metavar="TTC",
+        help="path or file name of a .ttc collection")
+    parser_list.add_argument("--grep", help="filter output by regex")
+
+    parser_info = command_parser.add_parser(CMD_INFO, help="show metrics of one font")
+    parser_info.add_argument("font", help="font path, file name or family name")
+    parser_info.add_argument("--index", type=int, default=0,
+        help="subfont index for .ttc (default 0)")
+    parser_info.add_argument("--size", type=float, default=0,
+        help="font size in px for pixel columns")
+
+    parser_compare = command_parser.add_parser(CMD_COMPARE, help="compare two fonts at a font size")
+    parser_compare.add_argument("fonts", nargs=2, metavar="FONT",
+        help="two fonts to compare (path, file name or family name)")
+    parser_compare.add_argument("--size", type=float, required=True,
+        help="font size in px (required)")
 
     return parser
 
@@ -229,36 +256,23 @@ def main():
 
     setup_logging(args)
 
-    if args.list:
-        path = resolve_font(args.list)
+    if args.command == CMD_LIST:
+        path = resolve_font(args.ttc)
         if not path.endswith(".ttc"):
-            die("--list expects a .ttc collection")
+            die("list expects a .ttc collection")
         list_subfonts(path, args.grep)
-        return
-
-    if not args.fonts:
-        parser.print_help()
-        sys.exit(1)
-
-    if len(args.fonts) > 2:
-        die("at most two fonts can be compared at once")
-
-    infos = []
-    for spec in args.fonts:
-        _, explicit = split_index(spec)
-        r = resolve_font(spec)
-        path, found_idx = r if isinstance(r, tuple) else (r, None)
-        idx = explicit if explicit is not None else (found_idx or args.index)
-        infos.append(measure(path, idx))
-
-    for i, info in enumerate(infos):
-        if i:
-            print()
-        print_info(info, args.size)
-
-    if len(infos) == 2 and args.size:
+    elif args.command == CMD_INFO:
+        print_info(load_font(args.font, args.index), args.size)
+    elif args.command == CMD_COMPARE:
+        infos = [load_font(spec, 0) for spec in args.fonts]
+        print_info(infos[0], args.size)
+        print()
+        print_info(infos[1], args.size)
         print()
         compare(infos[0], infos[1], args.size)
+    else:
+        # 你是不是新增子命令，但漏了处理
+        raise RuntimeError("unhandled command: %r" % args.command)
 
 
 if __name__ == "__main__":
